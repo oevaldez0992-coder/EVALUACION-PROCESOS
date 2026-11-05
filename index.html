@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador de reportes de auditoría</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+:root{--bg:#f3f5f7;--panel:#fff;--ink:#1b2733;--muted:#5d6b78;--line:#d5dbe1;--accent:#0f6e8c;--accent-ink:#fff;--warn:#b4531a;--ok:#2d7a4b;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#141b22;--panel:#1c252e;--ink:#e6ebf0;--muted:#98a6b3;--line:#32404d;--accent:#4db3d3;--accent-ink:#0b1a22;--warn:#e08a52;--ok:#6cc08b;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{padding:20px 24px;border-bottom:1px solid var(--line);background:var(--panel)}
+h1{margin:0;font-size:20px;font-weight:650}
+header p{margin:2px 0 0;color:var(--muted);font-size:14px}
+main{display:grid;grid-template-columns:320px 1fr;gap:20px;padding:20px 24px;max-width:1400px;margin:0 auto}
+@media (max-width:860px){main{grid-template-columns:1fr}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px}
+h2{margin:0 0 12px;font-size:15px;font-weight:650}
+#drop{border:2px dashed var(--line);border-radius:6px;padding:26px 14px;text-align:center;cursor:pointer;color:var(--muted)}
+#drop.over,#drop:focus-visible{border-color:var(--accent);color:var(--ink);outline:none}
+#drop strong{color:var(--ink);display:block;margin-bottom:2px}
+ul{list-style:none;margin:12px 0 0;padding:0}
+li.file{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line);font-size:14px}
+li.file small{display:block;color:var(--muted)}
+button{font:inherit;cursor:pointer;border-radius:5px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px}
+button:hover{border-color:var(--accent)}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.link{border:0;background:none;color:var(--warn);padding:0 2px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tabs button[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.desc{color:var(--muted);margin:0 0 12px}
+.params{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+label{display:flex;flex-direction:column;font-size:13px;color:var(--muted);gap:3px}
+select{font:inherit;padding:6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);max-width:320px}
+.actions{display:flex;gap:8px;margin:14px 0}
+.tbl{margin:0 0 18px}
+.tbl h3{font-size:14px;margin:0 0 6px}
+.scroll{overflow:auto;max-height:420px;border:1px solid var(--line);border-radius:5px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--bg);font-weight:650}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.rtitle{margin:0 0 6px;font-size:17px}
+details{margin:0 0 16px;border:1px solid var(--line);border-radius:5px;padding:10px 12px}
+summary{cursor:pointer;font-weight:650}
+.aud{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+input{font:inherit;padding:6px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);width:100%}
+input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{color:var(--warn);font-size:13px;margin:4px 0}
+.empty{color:var(--muted);padding:24px 0;text-align:center}
+@media print{header,#side,.tabs,.actions,.params{display:none}main{display:block;padding:0}.scroll{max-height:none;overflow:visible}section{border:0}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Generador de reportes de auditoría</h1>
+  <p>Sube uno o varios archivos de Excel y obtén reportes. Los archivos se procesan en tu navegador y no se envían a ningún servidor.</p>
+</header>
+<main>
+  <section id="side">
+    <h2>Archivos cargados</h2>
+    <div id="drop" tabindex="0" role="button" aria-label="Seleccionar archivos de Excel">
+      <strong>Arrastra tus archivos aquí</strong>
+      o haz clic para elegirlos (.xlsx, .xls, .csv)
+    </div>
+    <input id="picker" type="file" accept=".xlsx,.xls,.csv" multiple hidden>
+    <ul id="files"></ul>
+    <h2 style="margin-top:22px">Base de datos (Supabase)</h2>
+    <div id="auth"></div>
+  </section>
+  <section>
+    <h2>Reportes</h2>
+    <div class="tabs" id="tabs"></div>
+    <div id="view"><p class="empty">Sube al menos un archivo para generar reportes.</p></div>
+  </section>
+</main>
+
+<script>
+/* ============================================================
+   CONFIGURACIÓN DE REPORTES
+   Para agregar o modificar un reporte, edita la lista REPORTS.
+   Cada reporte tiene:
+     id, name, desc      -> identificación y descripción
+     params (opcional)   -> selectores que el usuario elige
+     run(ds, p)          -> devuelve { notes:[], tables:[{name, headers, rows}] }
+   ds = lista de hojas cargadas: { file, sheet, headers, rows }
+   p  = valores elegidos en los selectores
+   ============================================================ */
+const norm = s => String(s ?? '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+const isEmpty = v => String(v ?? '').trim() === '';
+const label = d => d.file + ' › ' + d.sheet;
+
+/* ---- Parámetros del reporte RUTAS PENDIENTES EN BEETRACK ---- */
+// % ponderado cuando el cumplimiento es "Sí" (si es "No", el ponderado es 0%)
+const PESOS = { gerente: 16.66, administrativo: 20 };
+
+// Sucursales que se evalúan, en el orden en que aparecen en el reporte
+const SUCURSALES = ['20 DE NOVIEMBRE', 'TIJUANA EXPRESS', 'ENSENADA', 'MEXICALI MENUDEO', 'MEXICALI MAYOREO',
+  'PUERTO PEÑASCO', 'MOSAIKOS', 'TIJUANA PROYECTOS', 'ROSARITO', 'PEDREGAL', 'NOGALES'];
+
+// Nombres que aparecen en el archivo -> sucursal del reporte (en minúsculas y sin acentos)
+const ALIAS = {
+  'tijuana 20 de noviembre': '20 DE NOVIEMBRE',
+  'kuroda rosarito': 'ROSARITO',
+  'kn proyectos ensenada': 'ENSENADA',
+  'kn proyectos ensenadaa': 'ENSENADA',
+  'kn ensenada menudeo': 'ENSENADA',
+  'kn proyectos mexical': 'MEXICALI MAYOREO',
+  'kn mexicali menudeo': 'MEXICALI MENUDEO',
+  'kn proyectos tijuana': 'TIJUANA PROYECTOS',
+  'kn puerto penasco': 'PUERTO PEÑASCO'
+};
+const MESES = { ene: 'ENERO', feb: 'FEBRERO', mar: 'MARZO', abr: 'ABRIL', may: 'MAYO', jun: 'JUNIO',
+  jul: 'JULIO', ago: 'AGOSTO', sep: 'SEPTIEMBRE', oct: 'OCTUBRE', nov: 'NOVIEMBRE', dic: 'DICIEMBRE' };
+
+const manual = {};   // auditorías capturadas a mano: { 'archivo › hoja': { SUCURSAL: '71' } }
+
+const sucReporte = raw => {
+  const k = norm(raw);
+  return ALIAS[k] || SUCURSALES.find(s => norm(s) === k || norm(s) === k.replace(/^kn /, '')) || String(raw).trim().toUpperCase();
+};
+// Deja solo los números del folio. Si la celda trae varios folios (separados), devuelve uno por cada uno.
+const folios = v => {
+  const g = String(v ?? '').match(/\d+/g) || [];
+  const largos = g.filter(x => x.length >= 6);
+  return largos.length ? largos : [g.join('')];
+};
+// Acepta 71, 71%, 0.71 -> 71
+const parseAud = s => {
+  const t = String(s ?? '').replace('%', '').replace(',', '.').trim();
+  if (t === '' || isNaN(Number(t))) return null;
+  const n = Number(t);
+  return Math.round((n <= 1 ? n * 100 : n) * 100) / 100;
+};
+const fmt = n => (Math.round(n * 100) / 100) + '%';
+
+// Si el archivo ya trae el cuadro de resultados al final (formato de septiembre), lee las calificaciones de auditoría
+function auditoriasDetectadas(d, cSu, cEs) {
+  const out = {}; let on = false;
+  d.rows.forEach(r => {
+    if (norm(r[cEs]) === 'cumplimiento gerentes') { on = true; return; }
+    const n = on ? parseAud(r[cEs]) : null;
+    if (n !== null && !isEmpty(r[cSu])) out[sucReporte(r[cSu])] = n;
+  });
+  return out;
+}
+
+const REPORTS = [
+  {
+    id: 'rutas', name: 'RUTAS PENDIENTES EN BEETRACK',
+    desc: 'Deja solo las órdenes en estado Pendiente, limpia el folio y evalúa el cumplimiento de gerentes y administrativos por sucursal. Funciona con el archivo exportado de Beetrack (todas las columnas) o con la versión ya depurada.',
+    params: [{ key: 'hoja', label: 'Archivo', choices: ds => ds.map((d, i) => [i, label(d)]) }],
+    run(ds, p) {
+      const d = ds[p.hoja]; if (!d) return { tables: [] };
+      const H = d.headers.map(norm), ix = n => H.indexOf(n);
+      const cId = ix('identificador'), cOr = ix('orden'), cFe = ix('fecha estimada'), cEs = ix('estado'),
+        cUs = ix('usuario movil'), cSu = ix('sucursal');
+      const falta = [['Orden', cOr], ['Fecha estimada', cFe], ['Estado', cEs]].filter(x => x[1] < 0).map(x => x[0]);
+      if (falta.length) return { notes: ['Este archivo no tiene las columnas: ' + falta.join(', ') + '.'], tables: [] };
+      const get = (r, i) => i < 0 ? '' : String(r[i] ?? '').trim();
+      // En el export completo la sucursal está en las columnas entre "Orden" y "Fecha estimada"
+      const bc = []; for (let i = cOr + 1; i < cFe; i++) bc.push(i);
+
+      const detalle = []; let corregidos = 0, varios = 0, sinFolio = 0;
+      d.rows.forEach(r => {
+        if (norm(r[cEs]) !== 'pendiente') return;
+        const orig = [...bc, cSu].map(i => get(r, i)).find(v => v) || '';
+        const f = folios(r[cOr]);
+        if (!/^\d+$/.test(get(r, cOr))) corregidos++;
+        if (f.length > 1) varios++;
+        f.forEach(x => {
+          if (!x) sinFolio++;
+          detalle.push([get(r, cId), x, orig, get(r, cFe), 'Pendiente', get(r, cUs), orig ? sucReporte(orig) : 'SIN SUCURSAL']);
+        });
+      });
+
+      const cnt = {}; detalle.forEach(x => cnt[x[6]] = (cnt[x[6]] || 0) + 1);
+      const extras = Object.keys(cnt).filter(s => !SUCURSALES.includes(s));
+      const lista = [...SUCURSALES, ...extras];
+      const det = auditoriasDetectadas(d, cSu, cEs), man = manual[label(d)] || {};
+      const aud = s => man[s] !== undefined ? parseAud(man[s]) : (det[s] ?? null);
+
+      const res = lista.map(s => {
+        const ok = !(cnt[s] > 0), a = aud(s);
+        return [s, cnt[s] || 0, a !== null ? 'Auditoría' : (ok ? 'Sí' : 'No'),
+          a !== null ? '—' : fmt(ok ? PESOS.gerente : 0), ok ? 'Sí' : 'No', fmt(ok ? PESOS.administrativo : 0), a !== null ? fmt(a) : ''];
+      });
+
+      const datos = lista.map(s => { const ok = !(cnt[s] > 0), a = aud(s);
+        return { sucursal: s, ordenes_pendientes: cnt[s] || 0, cumplimiento_gerente: a !== null ? 'Auditoría' : (ok ? 'Sí' : 'No'),
+          ponderado_gerente: a !== null ? null : (ok ? PESOS.gerente : 0), cumplimiento_administrativo: ok ? 'Sí' : 'No',
+          ponderado_administrativo: ok ? PESOS.administrativo : 0, auditoria_gerente: a }; });
+      const notes = [detalle.length + ' órdenes pendientes de ' + d.rows.length + ' filas del archivo.'];
+      if (corregidos) notes.push('Folios con letras o símbolos corregidos: ' + corregidos + '.');
+      if (varios) notes.push('Celdas con varios folios separadas en filas distintas: ' + varios + '.');
+      if (sinFolio) notes.push('Órdenes pendientes sin folio numérico: ' + sinFolio + '.');
+      if (extras.length) notes.push('Sucursales fuera del listado del reporte (se agregaron al final): ' + extras.join(', ') + '. Para asignarlas a una sucursal del listado, agrégalas en ALIAS.');
+      notes.push('Con auditoría, la calificación total del gerente (6 procesos) se sustituye por la calificación de auditoría.');
+
+      const per = d.file.match(/(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*[-_ .]?(\d{4})/i);
+      const html = '<details open><summary>Calificación de auditoría de gerentes (opcional)</summary>' +
+        '<p class="desc">Escribe la calificación (por ejemplo 71 o 71%) de las sucursales cuyo gerente fue evaluado con auditoría. Déjala vacía si no aplica.</p><div class="aud">' +
+        lista.map(s => '<label>' + esc(s) + '<input data-aud="' + esc(s) + '" inputmode="decimal" placeholder="—" value="' +
+          esc(man[s] !== undefined ? man[s] : (det[s] ?? '')) + '"></label>').join('') + '</div></details>';
+
+      return {
+        title: 'RUTAS PENDIENTES EN BEETRACK' + (per ? ' — ' + MESES[per[1].toLowerCase()] + ' ' + per[2] : ''),
+        notes, html,
+        guardar: per ? {
+          periodo: per[2] + '-' + String(Object.keys(MESES).indexOf(per[1].toLowerCase()) + 1).padStart(2, '0') + '-01', archivo: d.file,
+          detalle: detalle.map(x => ({ identificador: x[0], orden: x[1], sucursal: x[2], fecha_estimada: x[3], estado: x[4], usuario_movil: x[5], sucursal_reporte: x[6] })),
+          resultado: datos } : null,
+        tables: [
+          { name: 'Resultado de la evaluación', headers: ['Sucursal', 'Órdenes pendientes', 'Cumplimiento gerente', 'Ponderado gerente',
+            'Cumplimiento administrativo', 'Ponderado administrativo', 'Auditoría gerente'], rows: res },
+          { name: 'Órdenes pendientes', headers: ['Identificador', 'Orden', 'Sucursal', 'Fecha estimada', 'Estado', 'Usuario móvil', 'Sucursal del reporte'], rows: detalle }
+        ]
+      };
+    }
+  }
+];
+
+/* ============================================================
+   LÓGICA DE LA APLICACIÓN
+   ============================================================ */
+const $ = id => document.getElementById(id);
+let files = [];        // [{ name, sheets:[{sheet, headers, rows}] }]
+let current = REPORTS[0].id;
+let params = {};
+let result = null;
+
+const datasets = () => files.flatMap(f => f.sheets.map(s => ({ file: f.name, ...s })));
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function addFiles(list) {
+  for (const f of list) {
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+      const sheets = wb.SheetNames.map(name => {
+        const raw = XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: '', raw: false })
+          .filter(r => r.some(c => !isEmpty(c)));
+        const headers = (raw[0] || []).map((h, i) => isEmpty(h) ? 'Columna ' + (i + 1) : String(h).trim());
+        return { sheet: name, headers, rows: raw.slice(1).map(r => headers.map((_, i) => r[i] ?? '')) };
+      }).filter(s => s.headers.length);
+      files = files.filter(x => x.name !== f.name).concat({ name: f.name, sheets });
+    } catch (e) { alert('No se pudo leer "' + f.name + '". Verifica que sea un archivo de Excel o CSV válido.'); }
+  }
+  renderFiles(); renderReport();
+}
+
+function renderFiles() {
+  $('files').innerHTML = files.map((f, i) => '<li class="file"><div>' + esc(f.name) +
+    '<small>' + f.sheets.length + ' hoja(s), ' + f.sheets.reduce((a, s) => a + s.rows.length, 0) + ' filas</small></div>' +
+    '<button class="link" data-del="' + i + '" aria-label="Quitar ' + esc(f.name) + '">Quitar</button></li>').join('');
+}
+
+function renderTabs() {
+  $('tabs').innerHTML = REPORTS.map(r => '<button data-r="' + r.id + '" aria-pressed="' + (r.id === current) + '">' + esc(r.name) + '</button>').join('');
+}
+
+function renderReport() {
+  renderTabs();
+  const ds = datasets(), rep = REPORTS.find(r => r.id === current), v = $('view');
+  if (!ds.length) { result = null; v.innerHTML = '<p class="empty">Sube al menos un archivo para generar reportes.</p>'; return; }
+  let html = '<p class="desc">' + esc(rep.desc) + '</p>';
+  if (rep.params) {
+    rep.params.forEach(pr => { if (params[pr.key] === undefined || !pr.choices(ds, params).some(c => c[0] == params[pr.key])) params[pr.key] = (pr.choices(ds, params)[0] || [0])[0]; });
+    html += '<div class="params">' + rep.params.map(pr => '<label>' + esc(pr.label) + '<select data-p="' + pr.key + '">' +
+      pr.choices(ds, params).map(c => '<option value="' + c[0] + '"' + (c[0] == params[pr.key] ? ' selected' : '') + '>' + esc(c[1]) + '</option>').join('') + '</select></label>').join('') + '</div>';
+  }
+  result = rep.run(ds, params);
+  html += '<div class="actions"><button class="primary" id="xl">Descargar en Excel</button><button id="pr">Imprimir</button><button id="sv">Guardar en Supabase</button></div><p id="msg" class="note" role="status"></p>';
+  (result.notes || []).forEach(n => html += '<p class="note">' + esc(n) + '</p>');
+  html += result.html || '';
+  result.tables.forEach(t => {
+    const shown = t.rows.slice(0, 300);
+    html += '<div class="tbl"><h3>' + esc(t.name) + ' (' + t.rows.length + ')</h3><div class="scroll"><table><thead><tr>' +
+      t.headers.map(h => '<th>' + esc(h) + '</th>').join('') + '</tr></thead><tbody>' +
+      shown.map(r => '<tr>' + r.map(c => '<td' + (typeof c === 'number' ? ' class="num"' : '') + '>' + esc(c) + '</td>').join('') + '</tr>').join('') +
+      '</tbody></table></div>' + (t.rows.length > 300 ? '<p class="note">Se muestran 300 filas. El archivo de Excel incluye todas.</p>' : '') + '</div>';
+  });
+  if (result.title) html = '<h3 class="rtitle">' + esc(result.title) + '</h3>' + html;
+  v.innerHTML = html;
+}
+
+function exportExcel() {
+  const wb = XLSX.utils.book_new(), used = new Set();
+  result.tables.forEach((t, i) => {
+    let n = t.name.replace(/[\\\/?*\[\]:]/g, '').slice(0, 28) || 'Hoja'; if (used.has(n)) n += i; used.add(n);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([t.headers, ...t.rows]), n);
+  });
+  XLSX.writeFile(wb, (result.title || 'reporte').replace(/[^A-Za-z0-9]+/g, '_') + '.xlsx');
+}
+
+/* Eventos */
+const drop = $('drop'), picker = $('picker');
+drop.onclick = () => picker.click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); picker.click(); } };
+picker.onchange = () => { addFiles([...picker.files]); picker.value = ''; };
+['dragover', 'dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles([...e.dataTransfer.files]));
+$('files').onclick = e => { const i = e.target.dataset.del; if (i !== undefined) { files.splice(i, 1); renderFiles(); renderReport(); } };
+$('tabs').onclick = e => { const r = e.target.dataset.r; if (r) { current = r; params = {}; renderReport(); } };
+$('view').onchange = e => {
+  if (e.target.dataset.aud !== undefined) { const d = datasets()[params.hoja]; (manual[label(d)] = manual[label(d)] || {})[e.target.dataset.aud] = e.target.value; renderReport(); return; }
+  if (e.target.dataset.p) { params[e.target.dataset.p] = e.target.value; renderReport(); } };
+$('view').onclick = e => { if (e.target.id === 'xl') exportExcel(); if (e.target.id === 'pr') window.print(); };
+
+/* Supabase: la clave "publishable" es pública por diseño; la seguridad la dan las políticas RLS (solo usuarios con sesión escriben). */
+const SB_URL = 'https://aybasmzekdlbgepiqage.supabase.co';
+const SB_KEY = 'sb_publishable_GqUoW0ZD_xX2u2MpYap7zA_UIgWHt3k';
+const sb = window.supabase ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+const say = t => { const m = $('msg'); if (m) m.textContent = t; };
+
+async function renderAuth() {
+  if (!sb) { $('auth').innerHTML = '<p class="note">No se pudo cargar Supabase. Revisa tu conexión a internet.</p>'; return; }
+  const { data } = await sb.auth.getSession();
+  $('auth').innerHTML = data.session
+    ? '<p class="desc">Sesión iniciada como ' + esc(data.session.user.email) + '.</p><button id="out">Cerrar sesión</button>'
+    : '<div class="params" style="flex-direction:column"><label>Correo<input id="em" type="email" autocomplete="username"></label>' +
+      '<label>Contraseña<input id="pw" type="password" autocomplete="current-password"></label></div><button class="primary" id="in">Iniciar sesión</button><p id="authmsg" class="note"></p>';
+}
+async function guardar() {
+  const g = result && result.guardar;
+  if (!g) return say('No se detectó el mes en el nombre del archivo (por ejemplo ..._SEP-2026.xlsx).');
+  if (!sb || !(await sb.auth.getSession()).data.session) return say('Inicia sesión en Supabase (panel izquierdo) para guardar.');
+  say('Guardando…');
+  const { error } = await sb.rpc('guardar_reporte_rutas', { p_periodo: g.periodo, p_archivo: g.archivo, p_detalle: g.detalle, p_resultado: g.resultado });
+  say(error ? 'No se pudo guardar: ' + error.message : 'Guardado en Supabase: periodo ' + g.periodo.slice(0, 7) + '. Si ya existía, se reemplazó.');
+}
+$('auth').onclick = async e => {
+  if (e.target.id === 'in') {
+    const { error } = await sb.auth.signInWithPassword({ email: $('em').value.trim(), password: $('pw').value });
+    if (error) $('authmsg').textContent = 'No se pudo iniciar sesión: ' + error.message; else renderAuth();
+  }
+  if (e.target.id === 'out') { await sb.auth.signOut(); renderAuth(); }
+};
+$('view').addEventListener('click', e => { if (e.target.id === 'sv') guardar(); });
+
+renderTabs();
+renderAuth();
+</script>
+</body>
+</html>
